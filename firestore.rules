@@ -1,0 +1,281 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidCloudAgent(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
+             data.provider in ['GOOGLE_CLOUD', 'VERTEX_AI', 'AWS_BEDROCK', 'AZURE_AI', 'CUSTOM_ENDPOINT'] &&
+             data.googleAccountEmail is string && data.googleAccountEmail.size() >= 3 && data.googleAccountEmail.size() <= 120 &&
+             data.region is string && data.region.size() >= 1 && data.region.size() <= 40 &&
+             data.modelName is string && data.modelName.size() >= 1 && data.modelName.size() <= 60 &&
+             data.role is string && data.role.size() >= 1 && data.role.size() <= 60 &&
+             data.status in ['ACTIVE', 'DEGRADED', 'OFFLINE', 'RECOVERING'] &&
+             data.priority is int && data.priority >= 1 && data.priority <= 10 &&
+             data.currentLoadPct is int && data.currentLoadPct >= 0 && data.currentLoadPct <= 100 &&
+             data.maxConcurrency is int && data.maxConcurrency >= 1 && data.maxConcurrency <= 100 &&
+             data.tasksCompleted is int && data.tasksCompleted >= 0 &&
+             data.failoversHandled is int && data.failoversHandled >= 0 &&
+             data.avgLatencyMs is int && data.avgLatencyMs >= 0 &&
+             data.autoFailoverEnabled is bool &&
+             data.endpointUrl is string && data.endpointUrl.size() <= 250 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTask(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 4000 &&
+             data.category in ['ORCHESTRATION', 'ANALYSIS', 'CODE_GEN', 'SECURITY_AUDIT', 'REPORTING'] &&
+             data.status in ['QUEUED', 'RUNNING', 'FAILING_OVER', 'COMPLETED', 'FAILED'] &&
+             data.assignedAgentId is string && data.assignedAgentId.size() <= 128 &&
+             data.assignedAgentName is string && data.assignedAgentName.size() <= 80 &&
+             data.failoverFromAgentName is string && data.failoverFromAgentName.size() <= 80 &&
+             data.failoverCount is int && data.failoverCount >= 0 && data.failoverCount <= 20 &&
+             data.latencyMs is int && data.latencyMs >= 0 &&
+             data.resultSummary is string && data.resultSummary.size() <= 8000 &&
+             data.checkpointNote is string && data.checkpointNote.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidLog(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.eventType in [
+               'TASK_STARTED', 'TASK_COMPLETED', 'FAILOVER_TRIGGERED',
+               'AGENT_CONNECTED', 'AGENT_DISCONNECTED', 'PRIORITY_UPDATED',
+               'WEBHOOK_DISPATCHED', 'REPORT_GENERATED', 'ERROR'
+             ] &&
+             data.agentId is string && data.agentId.size() <= 128 &&
+             data.agentName is string && data.agentName.size() <= 80 &&
+             data.taskId is string && data.taskId.size() <= 128 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
+             data.metadataJson is string && data.metadataJson.size() <= 1000 &&
+             data.latencyMs is int && data.latencyMs >= 0 &&
+             data.severity in ['INFO', 'WARNING', 'CRITICAL', 'SUCCESS'] &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidAlert(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
+             data.severity in ['INFO', 'WARNING', 'CRITICAL'] &&
+             data.sourceAgentName is string && data.sourceAgentName.size() <= 80 &&
+             data.isAcknowledged is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidClusterSettings(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.loadBalanceStrategy in ['PRIORITY_FIRST', 'LEAST_LOAD', 'ROUND_ROBIN'] &&
+             data.autoFailoverEnabled is bool &&
+             data.heartbeatIntervalSec is int && data.heartbeatIntervalSec >= 5 && data.heartbeatIntervalSec <= 300 &&
+             data.failoverTimeoutMs is int && data.failoverTimeoutMs >= 500 && data.failoverTimeoutMs <= 30000 &&
+             data.highLoadThresholdPct is int && data.highLoadThresholdPct >= 50 && data.highLoadThresholdPct <= 99 &&
+             data.instantAlertsEnabled is bool &&
+             data.webhookUrl is string && data.webhookUrl.size() <= 300 &&
+             data.apiToken is string && data.apiToken.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidReport(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.periodLabel is string && data.periodLabel.size() >= 1 && data.periodLabel.size() <= 60 &&
+             data.executiveSummary is string && data.executiveSummary.size() >= 1 && data.executiveSummary.size() <= 4000 &&
+             data.recommendations is string && data.recommendations.size() <= 3000 &&
+             data.healthScore is int && data.healthScore >= 0 && data.healthScore <= 100 &&
+             data.totalTasksAnalyzed is int && data.totalTasksAnalyzed >= 0 &&
+             data.totalFailoversAnalyzed is int && data.totalFailoversAnalyzed >= 0 &&
+             data.avgLatencyMs is int && data.avgLatencyMs >= 0 &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /agents/{agentId} {
+        allow get: if isOwner(userId) && isValidId(agentId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(agentId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'name', 'provider', 'googleAccountEmail', 'region',
+                           'modelName', 'role', 'status', 'priority', 'currentLoadPct',
+                           'maxConcurrency', 'tasksCompleted', 'failoversHandled',
+                           'avgLatencyMs', 'autoFailoverEnabled', 'endpointUrl',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'name', 'provider', 'googleAccountEmail', 'region',
+                           'modelName', 'role', 'status', 'priority', 'currentLoadPct',
+                           'maxConcurrency', 'tasksCompleted', 'failoversHandled',
+                           'avgLatencyMs', 'autoFailoverEnabled', 'endpointUrl',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidCloudAgent(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(agentId) &&
+                         isValidCloudAgent(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'name', 'provider', 'googleAccountEmail', 'region',
+                           'modelName', 'role', 'status', 'priority', 'currentLoadPct',
+                           'maxConcurrency', 'tasksCompleted', 'failoversHandled',
+                           'avgLatencyMs', 'autoFailoverEnabled', 'endpointUrl', 'updatedAt'
+                         ]);
+        allow delete: if isOwner(userId) && isValidId(agentId);
+      }
+
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(taskId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(taskId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'title', 'prompt', 'category', 'status',
+                           'assignedAgentId', 'assignedAgentName', 'failoverFromAgentName',
+                           'failoverCount', 'latencyMs', 'resultSummary', 'checkpointNote',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'title', 'prompt', 'category', 'status',
+                           'assignedAgentId', 'assignedAgentName', 'failoverFromAgentName',
+                           'failoverCount', 'latencyMs', 'resultSummary', 'checkpointNote',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidTask(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(taskId) &&
+                         isValidTask(incoming(), userId) &&
+                         !(existing().status in ['COMPLETED', 'FAILED']) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'status', 'assignedAgentId', 'assignedAgentName',
+                           'failoverFromAgentName', 'failoverCount', 'latencyMs',
+                           'resultSummary', 'checkpointNote', 'updatedAt'
+                         ]);
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      match /logs/{logId} {
+        allow get: if isOwner(userId) && isValidId(logId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(logId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'eventType', 'agentId', 'agentName', 'taskId',
+                           'message', 'metadataJson', 'latencyMs', 'severity', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'eventType', 'agentId', 'agentName', 'taskId',
+                           'message', 'metadataJson', 'latencyMs', 'severity', 'createdAt'
+                         ]) &&
+                         isValidLog(incoming(), userId);
+        allow update, delete: if false;
+      }
+
+      match /alerts/{alertId} {
+        allow get: if isOwner(userId) && isValidId(alertId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(alertId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'title', 'description', 'severity',
+                           'sourceAgentName', 'isAcknowledged', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'title', 'description', 'severity',
+                           'sourceAgentName', 'isAcknowledged', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidAlert(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(alertId) &&
+                         isValidAlert(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'isAcknowledged', 'updatedAt'
+                         ]);
+        allow delete: if isOwner(userId) && isValidId(alertId);
+      }
+
+      match /settings/{settingId} {
+        allow get: if isOwner(userId) && isValidId(settingId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(settingId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'loadBalanceStrategy', 'autoFailoverEnabled',
+                           'heartbeatIntervalSec', 'failoverTimeoutMs',
+                           'highLoadThresholdPct', 'instantAlertsEnabled',
+                           'webhookUrl', 'apiToken', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'loadBalanceStrategy', 'autoFailoverEnabled',
+                           'heartbeatIntervalSec', 'failoverTimeoutMs',
+                           'highLoadThresholdPct', 'instantAlertsEnabled',
+                           'webhookUrl', 'apiToken', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidClusterSettings(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(settingId) &&
+                         isValidClusterSettings(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'loadBalanceStrategy', 'autoFailoverEnabled',
+                           'heartbeatIntervalSec', 'failoverTimeoutMs',
+                           'highLoadThresholdPct', 'instantAlertsEnabled',
+                           'webhookUrl', 'apiToken', 'updatedAt'
+                         ]);
+        allow delete: if false;
+      }
+
+      match /reports/{reportId} {
+        allow get: if isOwner(userId) && isValidId(reportId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(reportId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'title', 'periodLabel', 'executiveSummary',
+                           'recommendations', 'healthScore', 'totalTasksAnalyzed',
+                           'totalFailoversAnalyzed', 'avgLatencyMs', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'title', 'periodLabel', 'executiveSummary',
+                           'recommendations', 'healthScore', 'totalTasksAnalyzed',
+                           'totalFailoversAnalyzed', 'avgLatencyMs', 'createdAt'
+                         ]) &&
+                         isValidReport(incoming(), userId);
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(reportId);
+      }
+    }
+  }
+}

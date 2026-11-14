@@ -1,0 +1,6 @@
+{
+  "name": "NexusMesh",
+  "description": "منصة ذكاء اصطناعي لإدارة وتنسيق وكلاء السحابة المتعددين مع التحول التلقائي والمزامنة اللحظية وتحليلات الأداء",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

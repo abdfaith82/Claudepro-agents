@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<resources>
+    <string name="firestore_database_id" translatable="false">ai-studio-android-nexusmes-ba4dc0b9-3a07-4221-ae04-dbd80ee86454</string>
+    <string name="recaptcha_site_key" translatable="false">6LeF8x8uAAAAAO3KJC7QHg1FT4nZ_PAI-lf5K9BY</string>
+</resources>

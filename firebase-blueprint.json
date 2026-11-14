@@ -1,0 +1,197 @@
+{
+  "entities": {
+    "CloudAgent": {
+      "title": "CloudAgent",
+      "description": "A cloud AI agent node linked to a Google account and participating in the NexusMesh failover cluster.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "name": { "type": "string", "description": "Display name of the cloud agent." },
+        "provider": {
+          "type": "string",
+          "enum": ["GOOGLE_CLOUD", "VERTEX_AI", "AWS_BEDROCK", "AZURE_AI", "CUSTOM_ENDPOINT"],
+          "description": "Cloud provider hosting this agent."
+        },
+        "googleAccountEmail": { "type": "string", "description": "Google account email linked to this agent." },
+        "region": { "type": "string", "description": "Cloud deployment region." },
+        "modelName": { "type": "string", "description": "AI model identifier running on this node." },
+        "role": { "type": "string", "description": "Agent specialization role." },
+        "status": {
+          "type": "string",
+          "enum": ["ACTIVE", "DEGRADED", "OFFLINE", "RECOVERING"],
+          "description": "Live operational status of the agent."
+        },
+        "priority": { "type": "integer", "description": "Scheduling priority weight from 1 to 10." },
+        "currentLoadPct": { "type": "integer", "description": "Current compute utilization percentage (0-100)." },
+        "maxConcurrency": { "type": "integer", "description": "Maximum concurrent tasks allowed." },
+        "tasksCompleted": { "type": "integer", "description": "Total completed tasks." },
+        "failoversHandled": { "type": "integer", "description": "Number of failover handoffs absorbed." },
+        "avgLatencyMs": { "type": "integer", "description": "Average response latency in milliseconds." },
+        "autoFailoverEnabled": { "type": "boolean", "description": "Whether this agent participates in automatic failover." },
+        "endpointUrl": { "type": "string", "description": "Optional external API endpoint URL." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": [
+        "userId", "name", "provider", "googleAccountEmail", "region", "modelName",
+        "role", "status", "priority", "currentLoadPct", "maxConcurrency",
+        "tasksCompleted", "failoversHandled", "avgLatencyMs", "autoFailoverEnabled",
+        "endpointUrl", "createdAt", "updatedAt"
+      ]
+    },
+    "OrchestratedTask": {
+      "title": "OrchestratedTask",
+      "description": "An AI workload orchestrated across linked cloud agents with automatic failover checkpoints.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "prompt": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": ["ORCHESTRATION", "ANALYSIS", "CODE_GEN", "SECURITY_AUDIT", "REPORTING"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["QUEUED", "RUNNING", "FAILING_OVER", "COMPLETED", "FAILED"]
+        },
+        "assignedAgentId": { "type": "string" },
+        "assignedAgentName": { "type": "string" },
+        "failoverFromAgentName": { "type": "string" },
+        "failoverCount": { "type": "integer" },
+        "latencyMs": { "type": "integer" },
+        "resultSummary": { "type": "string" },
+        "checkpointNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "title", "prompt", "category", "status",
+        "assignedAgentId", "assignedAgentName", "failoverFromAgentName",
+        "failoverCount", "latencyMs", "resultSummary", "checkpointNote",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "OperationLog": {
+      "title": "OperationLog",
+      "description": "Immutable detailed audit log entry for agent orchestration, failovers, and system events.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "eventType": {
+          "type": "string",
+          "enum": [
+            "TASK_STARTED", "TASK_COMPLETED", "FAILOVER_TRIGGERED",
+            "AGENT_CONNECTED", "AGENT_DISCONNECTED", "PRIORITY_UPDATED",
+            "WEBHOOK_DISPATCHED", "REPORT_GENERATED", "ERROR"
+          ]
+        },
+        "agentId": { "type": "string" },
+        "agentName": { "type": "string" },
+        "taskId": { "type": "string" },
+        "message": { "type": "string" },
+        "metadataJson": { "type": "string" },
+        "latencyMs": { "type": "integer" },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL", "SUCCESS"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "eventType", "agentId", "agentName", "taskId",
+        "message", "metadataJson", "latencyMs", "severity", "createdAt"
+      ]
+    },
+    "SystemAlert": {
+      "title": "SystemAlert",
+      "description": "Real-time system alert triggered by agent disconnects, failovers, or high load.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+        "sourceAgentName": { "type": "string" },
+        "isAcknowledged": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "title", "description", "severity", "sourceAgentName",
+        "isAcknowledged", "createdAt", "updatedAt"
+      ]
+    },
+    "ClusterSettings": {
+      "title": "ClusterSettings",
+      "description": "Cluster routing, failover, notification, and API integration preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "loadBalanceStrategy": {
+          "type": "string",
+          "enum": ["PRIORITY_FIRST", "LEAST_LOAD", "ROUND_ROBIN"]
+        },
+        "autoFailoverEnabled": { "type": "boolean" },
+        "heartbeatIntervalSec": { "type": "integer" },
+        "failoverTimeoutMs": { "type": "integer" },
+        "highLoadThresholdPct": { "type": "integer" },
+        "instantAlertsEnabled": { "type": "boolean" },
+        "webhookUrl": { "type": "string" },
+        "apiToken": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "loadBalanceStrategy", "autoFailoverEnabled", "heartbeatIntervalSec",
+        "failoverTimeoutMs", "highLoadThresholdPct", "instantAlertsEnabled",
+        "webhookUrl", "apiToken", "createdAt", "updatedAt"
+      ]
+    },
+    "PerformanceReport": {
+      "title": "PerformanceReport",
+      "description": "AI-generated periodic cluster performance analysis report.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "periodLabel": { "type": "string" },
+        "executiveSummary": { "type": "string" },
+        "recommendations": { "type": "string" },
+        "healthScore": { "type": "integer" },
+        "totalTasksAnalyzed": { "type": "integer" },
+        "totalFailoversAnalyzed": { "type": "integer" },
+        "avgLatencyMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "title", "periodLabel", "executiveSummary", "recommendations",
+        "healthScore", "totalTasksAnalyzed", "totalFailoversAnalyzed", "avgLatencyMs",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/agents/{agentId}": {
+      "schema": { "$ref": "#/entities/CloudAgent" },
+      "description": "User-owned cloud AI agents linked with Google accounts."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/OrchestratedTask" },
+      "description": "User-owned AI tasks and failover checkpoints."
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": { "$ref": "#/entities/OperationLog" },
+      "description": "Immutable user-owned operation audit logs."
+    },
+    "/users/{userId}/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/SystemAlert" },
+      "description": "User-owned instant system alerts."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/ClusterSettings" },
+      "description": "User-owned cluster routing and API integration settings."
+    },
+    "/users/{userId}/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/PerformanceReport" },
+      "description": "User-owned periodic performance analysis reports."
+    }
+  }
+}
