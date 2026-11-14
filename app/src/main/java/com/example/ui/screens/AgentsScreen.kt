@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.example.data.manager.CloudSyncMetadata
 import com.example.data.model.AgentProviders
 import com.example.data.model.AgentStatus
 import com.example.data.model.CloudAgent
@@ -68,6 +69,7 @@ import kotlin.math.roundToLong
 @Composable
 fun AgentsScreen(
     agentsState: UiState<List<CloudAgent>>,
+    syncMetadata: CloudSyncMetadata,
     currentUserEmail: String,
     onAddAgent: (
         name: String,
@@ -97,6 +99,7 @@ fun AgentsScreen(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingAgent by remember { mutableStateOf<CloudAgent?>(null) }
+    var deletingAgent by remember { mutableStateOf<CloudAgent?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (agentsState) {
@@ -114,6 +117,9 @@ fun AgentsScreen(
             }
             is UiState.Success -> {
                 val agents = agentsState.data
+                val onlineCount = agents.count { it.status == AgentStatus.ACTIVE || it.status == AgentStatus.DEGRADED }
+                val offlineCount = agents.size - onlineCount
+
                 if (agents.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -144,7 +150,7 @@ fun AgentsScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("إضافة وكيل سحابي الآن")
+                            Text("إضافة حساب سحابي")
                         }
                     }
                 } else {
@@ -157,17 +163,45 @@ fun AgentsScreen(
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             item {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(14.dp),
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(
-                                        text = "اضبط أولوية كل وكيل بشكل مستقل (1-10) أو أوقف أي وكيل لاختبار التحول التلقائي الفوري بين حسابات Google المرتبطة.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(12.dp)
-                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "متصل (Online): $onlineCount  •  متوقف (Offline): $offlineCount",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = if (syncMetadata.hasPendingWrites) {
+                                                    "حالة المزامنة: جاري الحفظ في السحابة..."
+                                                } else {
+                                                    "حالة المزامنة: متزامن لحظياً عبر الأجهزة"
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (syncMetadata.hasPendingWrites) AmberWarning else EmeraldSecondary
+                                            )
+                                        }
+                                        Button(
+                                            onClick = { showAddDialog = true },
+                                            modifier = Modifier.testTag("header_add_cloud_account_button")
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("إضافة حساب")
+                                        }
+                                    }
                                 }
                             }
                             items(agents, key = { it.id }) { agent ->
@@ -176,7 +210,7 @@ fun AgentsScreen(
                                     onPriorityChange = { newPriority -> onUpdatePriority(agent, newPriority) },
                                     onToggleStatus = { onToggleStatus(agent) },
                                     onEdit = { editingAgent = agent },
-                                    onDelete = { onDeleteAgent(agent) }
+                                    onDelete = { deletingAgent = agent }
                                 )
                             }
                         }
@@ -194,7 +228,7 @@ fun AgentsScreen(
                 .padding(20.dp)
                 .testTag("add_agent_fab")
         ) {
-            Icon(Icons.Default.Add, contentDescription = "إضافة وكيل سحابي")
+            Icon(Icons.Default.Add, contentDescription = "إضافة حساب سحابي")
         }
     }
 
@@ -219,6 +253,33 @@ fun AgentsScreen(
             onConfirm = { name, _, email, _, _, role, priority, concurrency, autoFailover, endpoint ->
                 onUpdateConfig(target.id, name, email, priority, concurrency, autoFailover, role, endpoint)
                 editingAgent = null
+            }
+        )
+    }
+
+    if (deletingAgent != null) {
+        val target = deletingAgent!!
+        AlertDialog(
+            onDismissRequest = { deletingAgent = null },
+            title = { Text("إزالة الحساب السحابي") },
+            text = {
+                Text("هل تريد إزالة الوكيل '${target.name}' المرتبط بـ ${target.googleAccountEmail} من الشبكة السحابية؟")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteAgent(target)
+                        deletingAgent = null
+                    },
+                    modifier = Modifier.testTag("confirm_remove_agent_button")
+                ) {
+                    Text("إزالة الحساب")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingAgent = null }) {
+                    Text("إلغاء")
+                }
             }
         )
     }
@@ -274,7 +335,7 @@ private fun CloudAgentCard(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(
-                        text = AgentStatus.labelAr(agent.status),
+                        text = if (agent.status == AgentStatus.ACTIVE) "متصل (Online)" else if (agent.status == AgentStatus.OFFLINE) "متوقف (Offline)" else AgentStatus.labelAr(agent.status),
                         style = MaterialTheme.typography.labelMedium,
                         color = statusColor,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -365,19 +426,25 @@ private fun CloudAgentCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        if (agent.status == AgentStatus.ACTIVE) "إيقاف (اختبار التحول)" else "إعادة الاتصال"
+                        if (agent.status == AgentStatus.ACTIVE) "تحويل لـ Offline" else "تحويل لـ Online"
                     )
                 }
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onEdit) {
                         Icon(Icons.Default.Edit, contentDescription = "تعديل إعدادات الوكيل")
                     }
-                    IconButton(onClick = onDelete) {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        modifier = Modifier.testTag("remove_agent_button_${agent.id}")
+                    ) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "حذف الوكيل",
-                            tint = MaterialTheme.colorScheme.error
+                            contentDescription = "إزالة الحساب",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("إزالة", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }

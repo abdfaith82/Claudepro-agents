@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.auth.attemptAutoSignIn
 import com.example.auth.authStateFlow
 import com.example.auth.signOut
+import com.example.data.manager.FirestoreSyncManager
 import com.example.data.repository.MeshRepository
 import com.example.firebase.configureAppCheck
 import com.example.notifications.AlertNotificationHelper
@@ -131,6 +132,7 @@ private fun NexusMeshRootApp() {
                         val db = FirebaseFirestore.getInstance(databaseId)
                         MeshViewModel(
                             repository = MeshRepository(db, auth),
+                            syncManager = FirestoreSyncManager(db, auth),
                             currentUserId = user.uid,
                             currentUserEmail = user.email.orEmpty()
                         )
@@ -161,6 +163,7 @@ private fun MainCommandCenterScaffold(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val agentsState by viewModel.agentsState.collectAsStateWithLifecycle()
+    val syncMetadata by viewModel.syncMetadata.collectAsStateWithLifecycle()
     val tasksState by viewModel.tasksState.collectAsStateWithLifecycle()
     val logsState by viewModel.logsState.collectAsStateWithLifecycle()
     val alertsState by viewModel.alertsState.collectAsStateWithLifecycle()
@@ -287,6 +290,7 @@ private fun MainCommandCenterScaffold(
                     MeshTab.DASHBOARD -> DashboardScreen(
                         agentsState = agentsState,
                         tasksState = tasksState,
+                        syncMetadata = syncMetadata,
                         settings = settings,
                         liveExecution = liveExecution,
                         onNavigateToAgents = { selectedTab = MeshTab.AGENTS },
@@ -299,6 +303,7 @@ private fun MainCommandCenterScaffold(
                     )
                     MeshTab.AGENTS -> AgentsScreen(
                         agentsState = agentsState,
+                        syncMetadata = syncMetadata,
                         currentUserEmail = userEmail,
                         onAddAgent = { name, provider, email, region, model, role, priority, conc, autoFailover, endpoint ->
                             viewModel.addCloudAgent(

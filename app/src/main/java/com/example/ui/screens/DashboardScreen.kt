@@ -61,6 +61,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.manager.CloudSyncMetadata
 import com.example.data.model.AgentStatus
 import com.example.data.model.CloudAgent
 import com.example.data.model.ClusterSettings
@@ -69,6 +70,8 @@ import com.example.data.model.OrchestratedTask
 import com.example.data.model.TaskCategories
 import com.example.data.model.TaskStatus
 import com.example.ui.components.MeshTopologyCanvas
+import com.example.ui.components.PerformanceOverTimeCard
+import com.example.ui.components.WorkloadDistributionCard
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CoralError
 import com.example.ui.theme.CyanPrimary
@@ -81,6 +84,7 @@ import com.example.viewmodel.UiState
 fun DashboardScreen(
     agentsState: UiState<List<CloudAgent>>,
     tasksState: UiState<List<OrchestratedTask>>,
+    syncMetadata: CloudSyncMetadata,
     settings: ClusterSettings,
     liveExecution: LiveExecutionState,
     onNavigateToAgents: () -> Unit,
@@ -98,6 +102,12 @@ fun DashboardScreen(
     var taskPrompt by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(TaskCategories.ORCHESTRATION) }
     var simulateFailover by remember { mutableStateOf(false) }
+
+    val syncStatusText = when {
+        syncMetadata.hasPendingWrites -> "جاري المزامنة السحابية..."
+        syncMetadata.isFromCache -> "وضع الكاش المحلي (متعدد الأجهزة)"
+        else -> "متزامن سحابياً عبر الأجهزة"
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -160,13 +170,13 @@ fun DashboardScreen(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(if (activeCount > 0) EmeraldSecondary else AmberWarning)
+                                                .background(if (syncMetadata.hasPendingWrites) AmberWarning else EmeraldSecondary)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = if (activeCount > 0) "مزامنة لحظية نشطة" else "بانتظار ربط الوكلاء",
+                                            text = syncStatusText,
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = if (activeCount > 0) EmeraldSecondary else AmberWarning
+                                            color = if (syncMetadata.hasPendingWrites) AmberWarning else EmeraldSecondary
                                         )
                                     }
                                 }
@@ -188,6 +198,14 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+
+            // 2. Central Workload Distribution & Performance Over Time Charts
+            item {
+                WorkloadDistributionCard(agents = agents)
+            }
+            item {
+                PerformanceOverTimeCard(agents = agents, tasks = tasks)
             }
 
             // 2. Mesh Topology Visualizer + Load Strategy

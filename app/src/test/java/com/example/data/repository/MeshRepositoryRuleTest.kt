@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import com.example.base.FirestoreEmulatorTestBase
+import com.example.data.manager.FirestoreSyncManager
 import com.example.data.model.AgentProviders
 import com.example.data.model.AgentStatus
 import com.example.data.model.CloudAgent
@@ -20,6 +21,38 @@ import org.junit.Test
 import java.util.UUID
 
 class MeshRepositoryRuleTest : FirestoreEmulatorTestBase() {
+
+    @Test
+    fun syncManager_addToggleOnlineOfflineAndRemove_syncsRealtime() = runBlocking {
+        val uid = signInTestUser(ALICE_EMAIL)
+        val syncManager = FirestoreSyncManager(firestore, auth)
+        val agentId = "sync_${UUID.randomUUID().toString().replace("-", "")}"
+
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            syncManager.addCloudAccount(
+                CloudAgent(
+                    name = "Multi-Device Vertex Node",
+                    provider = AgentProviders.VERTEX_AI,
+                    googleAccountEmail = ALICE_EMAIL,
+                    status = AgentStatus.ACTIVE,
+                    priority = 8L
+                ),
+                customId = agentId
+            )
+            syncManager.setAgentOnlineStatus(agentId, isOnline = false)
+        }
+
+        val synced = withTimeout(FLOW_TIMEOUT_MS) {
+            syncManager.observeAgentsWithSyncStatus(uid).first { snap ->
+                snap.agents.any { it.id == agentId && it.status == AgentStatus.OFFLINE }
+            }
+        }
+        assertTrue(synced.agents.any { it.id == agentId && it.status == AgentStatus.OFFLINE })
+
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            syncManager.removeCloudAccount(agentId)
+        }
+    }
 
     @Test
     fun createAndObserveAgent_authenticatedOwner_succeeds() = runBlocking {

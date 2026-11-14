@@ -4,6 +4,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.MeshAiService
+import com.example.data.manager.CloudSyncMetadata
+import com.example.data.manager.FirestoreSyncManager
 import com.example.data.model.AgentStatus
 import com.example.data.model.CloudAgent
 import com.example.data.model.ClusterSettings
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -59,6 +62,7 @@ data class InstantNotificationEvent(
 
 class MeshViewModel(
     private val repository: MeshRepository,
+    private val syncManager: FirestoreSyncManager,
     private val currentUserId: String,
     private val currentUserEmail: String,
     private val aiService: MeshAiService = MeshAiService(),
@@ -67,8 +71,12 @@ class MeshViewModel(
 
     private var roundRobinCursor = 0
 
-    val agentsState: StateFlow<UiState<List<CloudAgent>>> = repository.observeAgents(currentUserId)
-        .map<List<CloudAgent>, UiState<List<CloudAgent>>> { UiState.Success(it) }
+    private val _syncMetadata = MutableStateFlow(CloudSyncMetadata())
+    val syncMetadata: StateFlow<CloudSyncMetadata> = _syncMetadata.asStateFlow()
+
+    val agentsState: StateFlow<UiState<List<CloudAgent>>> = syncManager.observeAgentsWithSyncStatus(currentUserId)
+        .onEach { synced -> _syncMetadata.value = synced.syncMetadata }
+        .map<_, UiState<List<CloudAgent>>> { synced -> UiState.Success(synced.agents) }
         .catch { error -> emit(UiState.Error(extractFirestoreMessage(error, "فشل مزامنة الوكلاء السحابيين"))) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
@@ -161,7 +169,7 @@ class MeshViewModel(
                     autoFailoverEnabled = autoFailoverEnabled,
                     endpointUrl = endpointUrl.trim().take(250)
                 )
-                val id = repository.createAgent(agent)
+                val id = syncManager.addCloudAccount(agent)
                 repository.addLog(
                     OperationLog(
                         eventType = LogEventTypes.AGENT_CONNECTED,
@@ -220,7 +228,7 @@ class MeshViewModel(
     ) {
         viewModelScope.launch {
             try {
-                repository.updateAgentConfig(
+                syncManager.updateCloudConfiguration(
                     agentId = agentId,
                     name = name,
                     googleAccountEmail = googleAccountEmail,
@@ -251,15 +259,10 @@ class MeshViewModel(
     fun toggleAgentStatus(agent: CloudAgent) {
         viewModelScope.launch {
             try {
-                val nextStatus = if (agent.status == AgentStatus.ACTIVE || agent.status == AgentStatus.DEGRADED) {
-                    AgentStatus.OFFLINE
-                } else {
-                    AgentStatus.ACTIVE
-                }
-                val nextLoad = if (nextStatus == AgentStatus.OFFLINE) 0L else 12L
-                repository.updateAgentStatusAndLoad(agent.id, nextStatus, currentLoadPct = nextLoad)
+                val nextOnline = !(agent.status == AgentStatus.ACTIVE || agent.status == AgentStatus.DEGRADED)
+                syncManager.setAgentOnlineStatus(agent.id, nextOnline)
 
-                if (nextStatus == AgentStatus.OFFLINE) {
+                if (!nextOnline) {
                     val standby = findBackupAgent(excludingId = agent.id)
                     val failoverNote = if (standby != null) {
                         "تم تفعيل التحول التلقائي وإسناد الاستمرارية إلى ${standby.name}."
@@ -311,7 +314,7 @@ class MeshViewModel(
     fun deleteAgent(agent: CloudAgent) {
         viewModelScope.launch {
             try {
-                repository.deleteAgent(agent.id)
+                syncManager.removeCloudAccount(agent.id)
                 repository.addLog(
                     OperationLog(
                         eventType = LogEventTypes.AGENT_DISCONNECTED,
