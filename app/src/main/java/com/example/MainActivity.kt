@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Hub
@@ -62,12 +63,14 @@ import com.example.firebase.configureAppCheck
 import com.example.notifications.AlertNotificationHelper
 import com.example.ui.components.SettingsBottomSheet
 import com.example.ui.screens.AgentsScreen
+import com.example.ui.screens.AiEnginesScreen
 import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DeveloperApiScreen
 import com.example.ui.screens.LogsAndAlertsScreen
 import com.example.ui.theme.NexusMeshTheme
+import com.example.viewmodel.AiEnginesViewModel
 import com.example.viewmodel.MeshViewModel
 import com.example.viewmodel.UiState
 import com.google.firebase.Firebase
@@ -77,9 +80,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 private enum class MeshTab(val label: String, val icon: ImageVector, val testTag: String) {
     DASHBOARD("لوحة التحكم", Icons.Default.Dashboard, "nav_dashboard"),
     AGENTS("الوكلاء", Icons.Default.Hub, "nav_agents"),
+    AI_ENGINES("محركات AI", Icons.Default.AutoAwesome, "nav_ai_engines"),
     LOGS("السجل", Icons.Default.Terminal, "nav_logs"),
-    ANALYTICS("التقارير", Icons.Default.Analytics, "nav_analytics"),
-    DEVELOPER("المطورون", Icons.Default.Code, "nav_developer")
+    ANALYTICS("التقارير", Icons.Default.Analytics, "nav_analytics")
 }
 
 class MainActivity : ComponentActivity() {
@@ -139,8 +142,10 @@ private fun NexusMeshRootApp() {
                     }
                 }
             )
+            val aiEnginesViewModel: AiEnginesViewModel = viewModel(key = "ai_${user.uid}")
             MainCommandCenterScaffold(
                 viewModel = meshViewModel,
+                aiEnginesViewModel = aiEnginesViewModel,
                 userEmail = user.email.orEmpty(),
                 userName = user.displayName.orEmpty(),
                 onSignOut = {
@@ -155,6 +160,7 @@ private fun NexusMeshRootApp() {
 @Composable
 private fun MainCommandCenterScaffold(
     viewModel: MeshViewModel,
+    aiEnginesViewModel: AiEnginesViewModel,
     userEmail: String,
     userName: String,
     onSignOut: () -> Unit
@@ -174,14 +180,22 @@ private fun MainCommandCenterScaffold(
     val webhookResult by viewModel.webhookResult.collectAsStateWithLifecycle()
     val isTestingWebhook by viewModel.isTestingWebhook.collectAsStateWithLifecycle()
 
+    val chatState by aiEnginesViewModel.chatState.collectAsStateWithLifecycle()
+    val videoState by aiEnginesViewModel.videoState.collectAsStateWithLifecycle()
+
     var selectedTab by remember { mutableStateOf(MeshTab.DASHBOARD) }
+    var showDeveloperPortal by remember { mutableStateOf(false) }
     var logsInitialSubTab by remember { mutableIntStateOf(0) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
     val unreadAlertsCount = (alertsState as? UiState.Success)?.data?.count { !it.isAcknowledged } ?: 0
 
-    BackHandler(enabled = selectedTab != MeshTab.DASHBOARD) {
-        selectedTab = MeshTab.DASHBOARD
+    BackHandler(enabled = showDeveloperPortal || selectedTab != MeshTab.DASHBOARD) {
+        if (showDeveloperPortal) {
+            showDeveloperPortal = false
+        } else {
+            selectedTab = MeshTab.DASHBOARD
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -211,7 +225,11 @@ private fun MainCommandCenterScaffold(
                 TopAppBar(
                     title = {
                         Text(
-                            text = if (selectedTab == MeshTab.DASHBOARD) "NexusMesh AI" else selectedTab.label,
+                            text = when {
+                                showDeveloperPortal -> "بوابة المطورين والـ API"
+                                selectedTab == MeshTab.DASHBOARD -> "NexusMesh AI"
+                                else -> selectedTab.label
+                            },
                             style = MaterialTheme.typography.titleLarge
                         )
                     },
@@ -220,7 +238,22 @@ private fun MainCommandCenterScaffold(
                     ),
                     actions = {
                         IconButton(
+                            onClick = { showDeveloperPortal = !showDeveloperPortal },
+                            modifier = Modifier.testTag("developer_api_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Code,
+                                contentDescription = "بوابة المطورين والـ API",
+                                tint = if (showDeveloperPortal) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                        IconButton(
                             onClick = {
+                                showDeveloperPortal = false
                                 logsInitialSubTab = 1
                                 selectedTab = MeshTab.LOGS
                             },
@@ -250,8 +283,9 @@ private fun MainCommandCenterScaffold(
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         MeshTab.entries.forEach { tab ->
                             NavigationBarItem(
-                                selected = selectedTab == tab,
+                                selected = !showDeveloperPortal && selectedTab == tab,
                                 onClick = {
+                                    showDeveloperPortal = false
                                     if (tab == MeshTab.LOGS) logsInitialSubTab = 0
                                     selectedTab = tab
                                 },
@@ -273,8 +307,9 @@ private fun MainCommandCenterScaffold(
                     NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
                         MeshTab.entries.forEach { tab ->
                             NavigationRailItem(
-                                selected = selectedTab == tab,
+                                selected = !showDeveloperPortal && selectedTab == tab,
                                 onClick = {
+                                    showDeveloperPortal = false
                                     if (tab == MeshTab.LOGS) logsInitialSubTab = 0
                                     selectedTab = tab
                                 },
@@ -286,56 +321,8 @@ private fun MainCommandCenterScaffold(
                     }
                 }
 
-                when (selectedTab) {
-                    MeshTab.DASHBOARD -> DashboardScreen(
-                        agentsState = agentsState,
-                        tasksState = tasksState,
-                        syncMetadata = syncMetadata,
-                        settings = settings,
-                        liveExecution = liveExecution,
-                        onNavigateToAgents = { selectedTab = MeshTab.AGENTS },
-                        onRunWorkload = { title, prompt, category, simFailover ->
-                            viewModel.executeOrchestratedTask(title, prompt, category, simFailover)
-                        },
-                        onChangeStrategy = { strat ->
-                            viewModel.updateClusterSettings(settings.copy(loadBalanceStrategy = strat))
-                        }
-                    )
-                    MeshTab.AGENTS -> AgentsScreen(
-                        agentsState = agentsState,
-                        syncMetadata = syncMetadata,
-                        currentUserEmail = userEmail,
-                        onAddAgent = { name, provider, email, region, model, role, priority, conc, autoFailover, endpoint ->
-                            viewModel.addCloudAgent(
-                                name, provider, email, region, model, role,
-                                priority, conc, autoFailover, endpoint
-                            )
-                        },
-                        onUpdatePriority = { agent, priority ->
-                            viewModel.updateAgentPriority(agent, priority)
-                        },
-                        onUpdateConfig = { id, name, email, priority, conc, autoFailover, role, endpoint ->
-                            viewModel.updateAgentConfig(id, name, email, priority, conc, autoFailover, role, endpoint)
-                        },
-                        onToggleStatus = { agent -> viewModel.toggleAgentStatus(agent) },
-                        onDeleteAgent = { agent -> viewModel.deleteAgent(agent) }
-                    )
-                    MeshTab.LOGS -> LogsAndAlertsScreen(
-                        logsState = logsState,
-                        alertsState = alertsState,
-                        initialTab = logsInitialSubTab,
-                        onAcknowledgeAlert = { alert -> viewModel.acknowledgeAlert(alert) },
-                        onDeleteAlert = { alert -> viewModel.deleteAlert(alert) }
-                    )
-                    MeshTab.ANALYTICS -> AnalyticsScreen(
-                        agentsState = agentsState,
-                        tasksState = tasksState,
-                        logsState = logsState,
-                        reportsState = reportsState,
-                        isGeneratingReport = isGeneratingReport,
-                        onGenerateReport = { period -> viewModel.generatePeriodicReport(period) }
-                    )
-                    MeshTab.DEVELOPER -> DeveloperApiScreen(
+                if (showDeveloperPortal) {
+                    DeveloperApiScreen(
                         settings = settings,
                         isTestingWebhook = isTestingWebhook,
                         webhookResult = webhookResult,
@@ -345,6 +332,69 @@ private fun MainCommandCenterScaffold(
                         onRotateToken = { viewModel.rotateApiToken() },
                         onTestWebhook = { url, token -> viewModel.testWebhookIntegration(url, token) }
                     )
+                } else {
+                    when (selectedTab) {
+                        MeshTab.DASHBOARD -> DashboardScreen(
+                            agentsState = agentsState,
+                            tasksState = tasksState,
+                            syncMetadata = syncMetadata,
+                            settings = settings,
+                            liveExecution = liveExecution,
+                            onNavigateToAgents = { selectedTab = MeshTab.AGENTS },
+                            onRunWorkload = { title, prompt, category, simFailover ->
+                                viewModel.executeOrchestratedTask(title, prompt, category, simFailover)
+                            },
+                            onChangeStrategy = { strat ->
+                                viewModel.updateClusterSettings(settings.copy(loadBalanceStrategy = strat))
+                            }
+                        )
+                        MeshTab.AGENTS -> AgentsScreen(
+                            agentsState = agentsState,
+                            syncMetadata = syncMetadata,
+                            currentUserEmail = userEmail,
+                            onAddAgent = { name, provider, email, region, model, role, priority, conc, autoFailover, endpoint ->
+                                viewModel.addCloudAgent(
+                                    name, provider, email, region, model, role,
+                                    priority, conc, autoFailover, endpoint
+                                )
+                            },
+                            onUpdatePriority = { agent, priority ->
+                                viewModel.updateAgentPriority(agent, priority)
+                            },
+                            onUpdateConfig = { id, name, email, priority, conc, autoFailover, role, endpoint ->
+                                viewModel.updateAgentConfig(id, name, email, priority, conc, autoFailover, role, endpoint)
+                            },
+                            onToggleStatus = { agent -> viewModel.toggleAgentStatus(agent) },
+                            onDeleteAgent = { agent -> viewModel.deleteAgent(agent) }
+                        )
+                        MeshTab.AI_ENGINES -> AiEnginesScreen(
+                            chatState = chatState,
+                            videoState = videoState,
+                            onSelectModel = aiEnginesViewModel::selectChatModel,
+                            onSelectPreset = aiEnginesViewModel::selectRolePreset,
+                            onUpdateSystemInstruction = aiEnginesViewModel::updateSystemInstruction,
+                            onSendChatMessage = aiEnginesViewModel::sendChatMessage,
+                            onClearChatHistory = aiEnginesViewModel::clearChatHistory,
+                            onSelectAspectRatio = aiEnginesViewModel::selectAspectRatio,
+                            onGenerateVideo = aiEnginesViewModel::generateVideo,
+                            onSelectVideo = aiEnginesViewModel::selectActiveVideo
+                        )
+                        MeshTab.LOGS -> LogsAndAlertsScreen(
+                            logsState = logsState,
+                            alertsState = alertsState,
+                            initialTab = logsInitialSubTab,
+                            onAcknowledgeAlert = { alert -> viewModel.acknowledgeAlert(alert) },
+                            onDeleteAlert = { alert -> viewModel.deleteAlert(alert) }
+                        )
+                        MeshTab.ANALYTICS -> AnalyticsScreen(
+                            agentsState = agentsState,
+                            tasksState = tasksState,
+                            logsState = logsState,
+                            reportsState = reportsState,
+                            isGeneratingReport = isGeneratingReport,
+                            onGenerateReport = { period -> viewModel.generatePeriodicReport(period) }
+                        )
+                    }
                 }
             }
         }
